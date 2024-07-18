@@ -1,0 +1,207 @@
+---
+title: "Ajuste de MLG"
+author: "Taciane de Souza"
+date: "2024-06-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(kableExtra)
+library(stats)
+library(MASS)
+library(mdscore)
+```
+
+# Apresentação do problema
+
+Temos a seguinte questão retirada do livro do professor Gilberto Paula (https://www.ime.usp.br/~giapaula/texto_2024.pdf) e os dados obtidos em (https://www.ime.usp.br/~giapaula/reg2.txt).
+
+**Questão:** (Paula, 2024) No arquivo reg2.txt são apresentadas as siglas dos 48 estados norte-americanos contíguos juntamente com as seguintes variáveis: taxa (taxa do combustível no estado em USD), licença (proporção de motoristas licenciados), renda (renda per capita em USD), estradas (ajuda federal para as estradas em mil USD) e consumo (consumo de combustível por habitante). O interesse nesse estudo é tentar explicar o consumo médio de combustível segundo as variáveis.
+
+```{r, echo=FALSE}
+dados <- read.csv2("https://www.ime.usp.br/~giapaula/reg2.txt", sep = "", dec = ".", header = T)
+kable(head(dados))
+```
+
+---
+
+# Análise descritiva
+
+```{r, echo=FALSE}
+kable(summary(dados[,2:6]))
+attach(dados)
+```
+
+A tabela acima apresenta os valores de mínimo, 1º quartil, mediana, média, 3º quartil e máximo para as variáveis `taxa`, `licenca`, `estradas` e `consumo`. Observamos que a variável `estradas` possui valor mínimo de 431 enquanto o valor máximo é de 17782, como estamos tratando sobre valores em mil USD, então isto significa que a ajuda federal para algumas estradas é muito maior do que para outras. Também podemos observar que a mediana ($=4736$) possui um valor menor que a média ($=5565$) o que significa que provavelmente temos uma assimetria positiva nessa variável, que poderá ser visualizada melhor em um gráfico de histograma.
+
+## Histogramas
+
+```{r, echo=FALSE}
+par(mfrow = c(3,2))
+hist(consumo, freq = F, col = "pink", main = "Consumo", xlab = "", ylab = "")
+lines(density(consumo), col = "red4")
+
+hist(taxa, freq = F, col = "pink", main = "Taxa", ylim = c(0,0.5), xlab = "", ylab = "")
+lines(density(taxa), col = "red4")
+
+hist(licenca, freq = F, col = "pink", ylim = c(0,8), main = "Licença", xlab = "", ylab = "")
+lines(density(licenca), col = "red4")
+
+hist(renda, freq = F, col = "pink", main = "Renda", xlab = "", ylab = "")
+lines(density(renda), col = "red4")
+
+hist(estradas, freq = F, col = "pink", main = "Estradas", xlab = "", ylab = "")
+lines(density(estradas), col = "red4")
+```
+
+Como observado, a variável `estradas` possui um comportamento de assimetria à esquerda.
+
+## Boxplots
+
+Os gráficos de boxplots, ou diagrma de caixas, são muito úteis para identificar a existência de outliers no conjunto de dados. Em um gráfico de boxplot são apresentados os limites inferior e superior, 1º quartil, mediana, 3º quartil e possíveis valores discrepantes.
+
+```{r, echo=FALSE}
+par(mfrow=c(3,2))
+boxplot(taxa, main = "Taxa do combustível no estado (em USD)", col = "pink")  #outlier: 
+boxplot(licenca, main = "Proporção de motoristas licenciados", col = "pink")  #outlier: 
+boxplot(renda, main = "Renda per capita (em USD)", col = "pink")
+
+boxplot(estradas, main = "Ajuda federal para as estradas (em mil USD)", col = "pink")
+
+boxplot(consumo, main = "Consumo de combustível por habitante", col = "pink")
+
+```
+
+Pelos gráficos acima podemos tirar algumas conclusões sobre as variáveis. Observamos alguns outliers como para a taxa mínima de combustível que é 5 USD no estado do Texas. A proporção máxima de motoristas licenciados é de 0.724 (72,4%) no estado Dakota do Sul. Para a ajuda federal para as estradas observamos dois valores extremos nos estados IL (Illinois) e TX (Texas), e para o consumo de combustível por habitante também é observado dois valores extremos nos estados de WY (Wyoming) e NV (Nevada).
+
+## Diagrama de dispersão
+
+Diagramas de dispersão são úteis para visualizar a relação e a força entre duas variáveis. 
+
+```{r, echo=FALSE}
+par(mfrow = c(2,2))
+
+plot(taxa, consumo, xlab = "Taxa do combustível", ylab = "Consumo de combustível", pch = 19, col = "red4")
+
+plot(licenca, consumo, xlab = "Proporção de motoristas licenciados", ylab = "Consumo de combustível", pch = 19, col = "red4")
+
+plot(renda, consumo, xlab = "Renda per capita", ylab = "Consumo de combustível", pch = 19, col = "red4")
+
+plot(estradas, consumo, xlab = "Ajuda federal para as estradas", ylab = "Consumo de combustível", pch = 19, col = "red4")
+```
+
+Tabela de correlação entre as variáveis
+
+```{r, echo=FALSE}
+kable(round(cor(dados[2:6]),2))
+```
+
+Observamos uma relação positiva entre as variáveis `licenca` e `consumo`, já para as demais, não foi observado nenhum tipo de relação.
+
+---
+
+# Ajuste de MLG
+
+Como o objetivo do estudo é tentar explicar o consumo médio de combustível e, ao verificar o gráfico de histograma das variáveis, identificamos que possuem distribuiçôes assimétricas com caudas mais pesadas. Prtanto a distribuição Gama pode ser uma boa opção para acomodar melhor os outliers.
+
+A variável resposta deste experimento é quantitativa denotada pelo `consumo` médio de combustível. Todas as variáveis regressoras também são quantitativas. A variável `taxa` possui $i$ níveis com $i=1,...48$. A variável `licença` possui $j$ níveis com $j=1,...48$. A variável `renda` possui $k$ níveis com $k=1,...48$.  A variável `estradas` possui $l$ níveis com $l=1,...48$.
+
+Iremos ajustar o modelo saturado (com todas as variáveis) que será a nossa hipótese alternativa.
+
+Modelo saturado sob $H_{1}:$
+
+$log(\mu_{ijkl})=\alpha + \beta_{1}(taxa)_{ijkl} + \beta_{2}(licença)_{ijkl} + \beta_{3}(renda)_{ijkl} + \beta_{4}(estradas)_{ijkl}$
+
+Ajuste de modelo gama com função de ligação logarítmica
+
+```{r, echo=FALSE}
+mod.S <- glm(consumo ~ taxa + licenca + renda + estradas, family = Gamma(link = "log"))
+summary(mod.S)
+```
+
+Observamos que somente a variável `estradas` não foi significativa para o modelo ao nível de 5\% de confiança.
+
+## Seleção de modelo
+Iremos utilizar a função *stepAIC* do pacote *MASS* para selecionar um modelo restrito para a nossa hipótese nula.
+
+```{r}
+stepAIC(mod.S)
+```
+
+O modelo selecionado com menor AIC é o *consumo = taxa + licenca + renda* em que todas as variáveis foram significativas ao nível de 5\% de significância.
+
+Modelo restrito sob $H_{0}:$
+
+$log(\mu_{ijkl})=\alpha + \beta_{1}(taxa)_{ijkl} + \beta_{2}(licença)_{ijkl} + \beta_{3}(renda)_{ijkl}$
+
+Ajuste de modelo gama com função de ligação logarítmica
+
+```{r}
+mod.R <- glm(formula = consumo ~ taxa + licenca + renda, family = Gamma(link = "log"))
+summary(mod.R)
+```
+
+---
+
+# Qualidade do ajuste
+
+Para testar a qualidade do ajuste foi utilizado o teste da Razão de Verossimilhança e o Teste Escore ambos pelo pacote *mdscore*.
+
+Teste da razão de verossimilhança:
+
+```{r}
+LR <- mdscore::lr.test(mod.R, mod.S); LR 
+```
+
+Não rejeita H0
+
+Teste Escore:
+
+```{r}
+X <- model.matrix(mod.S) # modelo sob (H1)
+SR <- mdscore(mod.R, X1 = X[, 5]); SR
+pvSR <- pchisq(SR$Sr, SR$df, lower.tail = FALSE); pvSR
+```
+
+Não rejeita H0.
+
+Em nenhum dos testes foi rejeitada a hipótese nula, portanto, podemos concluir que o modelo restrito é melhor quando comparado ao modelo saturado.
+
+---
+
+# Interpretação dos coeficientes
+
+```{r}
+va <- mod.R$coeff; va
+mu <- exp(mod.R$coeff) ; mu
+```
+
+$\alpha$: intercepto;
+
+$\beta$: magnitude da taxa do combustível em $\mu$;
+
+$\gamma$: magnitude de motoristas licenciados em $\mu$;
+
+$\delta$: magnitude da renda per capita em $\mu$.
+
+Intercepto: 5.967; $\mu$ = exp(intercepto) = 390.319. O consumo médio de combustível por habitante é de 390.32
+
+Beta(Taxa): -0.049; $\mu$ = exp(beta) = 0.95. O consumo de combustível diminui 5% com o incremento na taxa.
+
+Gamma(licença): 2.349; $\mu$ = exp(gamma) = 10.474. o consumo de combustível aumenta 10 vezes com o aumento do número de motoristas licenciados
+
+Delta(renda): -0.0001; $\mu$ = exp(delta) = 0.999. o consumo de combustível diminui 0,1% com o aumento da renda per capita.
+
+<br />
+ 
+---
+
+# Referências:
+>> Paula, G. A. (2013).
+Modelos de Regressão com apoio computacional.
+IME-USP.
+
+>> Cordeiro, G. M. & Demétrio, C. G. B. (2013).
+Modelos Lineares Generalizados e Extensões.
+UFRPE & ESALQ-USP.
